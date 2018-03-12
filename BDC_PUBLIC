@@ -1,0 +1,539 @@
+ZR_HR_BDC_DATA  bdc包含的公共文件
+*&---------------------------------------------------------------------*
+*&  包含                ZR_HR_BDC_DATA
+*&---------------------------------------------------------------------*
+
+*&---------------------------------------------------------------------*
+*&  Include           ZHRBDC_DATA
+*&
+*&  BDC 数据及函数
+*&
+*&  SUNYAN
+*&---------------------------------------------------------------------*
+
+
+
+TYPE-POOLS icon.
+TABLES: sscrfields.
+TYPE-POOLS : slis.
+DATA: afield    TYPE slis_fieldcat_alv.
+DATA: fieldcat  TYPE slis_t_fieldcat_alv.
+DATA: gs_layout TYPE slis_layout_alv.
+DATA: g_repid   TYPE sy-repid.
+DATA: i_layout  TYPE slis_layout_alv.
+DATA: gridlsl   TYPE lvc_s_glay.
+DATA: gv_result TYPE char1 .
+
+DATA:BEGIN OF it_alv OCCURS 0,
+  status(8),
+  pernr TYPE persno ,
+  msgtp TYPE bdc_mart ,
+  text(100) ,
+END OF it_alv.
+DATA:time_e TYPE i VALUE '0'.
+DATA:time_s TYPE i VALUE '0'.
+DATA:time_w TYPE i VALUE '0'.
+DATA:time_e_txt TYPE string.
+DATA:time_s_txt TYPE string.
+DATA:time_w_txt TYPE string.
+
+
+DATA: p_fun1 TYPE c.
+DATA: b_write TYPE c VALUE 'X'. "程序运行结果输出标记
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS: p_typ TYPE ctu_mode OBLIGATORY DEFAULT 'N',
+            p_upd TYPE ctu_update OBLIGATORY DEFAULT 'L'.
+SELECTION-SCREEN END OF BLOCK b1.
+
+PARAMETERS: pa_file LIKE rlgrap-filename OBLIGATORY  .
+
+PARAMETERS : pa_flog LIKE rlgrap-filename .
+
+
+SELECTION-SCREEN: FUNCTION KEY 1.
+
+INITIALIZATION.
+  sscrfields-functxt_01 = '请下载批导模板'.
+
+*----------------------------------------------------------------------*
+*   data definition
+*----------------------------------------------------------------------*
+*       Batchinputdata of single transaction
+  DATA:   bdcdata LIKE bdcdata    OCCURS 0 WITH HEADER LINE.
+*       messages of call transaction
+  DATA:   messtab LIKE bdcmsgcoll OCCURS 0 WITH HEADER LINE.
+*       message texts
+  TABLES: t100.
+
+
+*&---------------------------------------------------------------------*
+*&      Form  BDC_TRANSACTION
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->TCODE      text
+*----------------------------------------------------------------------*
+FORM bdc_transaction USING tcode CHANGING p_record TYPE tab_str.
+  DATA: l_mstring(480).
+  DATA: l_subrc LIKE sy-subrc.
+
+* call transaction using
+  REFRESH messtab.
+  CALL TRANSACTION tcode USING bdcdata
+                   MODE   p_typ
+                   UPDATE p_upd
+                   MESSAGES INTO messtab.
+  l_subrc = sy-subrc.
+  READ TABLE messtab WITH KEY msgtyp = 'E'.
+  IF sy-subrc EQ 0.
+    it_alv-pernr = p_record-pernr .
+    it_alv-msgtp = 'E' .
+    it_alv-status = '@0A@'.
+
+    SELECT SINGLE * FROM t100 WHERE sprsl = messtab-msgspra
+                              AND   arbgb = messtab-msgid
+                              AND   msgnr = messtab-msgnr.
+    IF sy-subrc = 0.
+      l_mstring = t100-text.
+      IF l_mstring CS '&1'.
+        REPLACE '&1' WITH messtab-msgv1 INTO l_mstring.
+        REPLACE '&2' WITH messtab-msgv2 INTO l_mstring.
+        REPLACE '&3' WITH messtab-msgv3 INTO l_mstring.
+        REPLACE '&4' WITH messtab-msgv4 INTO l_mstring.
+      ELSE.
+        REPLACE '&' WITH messtab-msgv1 INTO l_mstring.
+        REPLACE '&' WITH messtab-msgv2 INTO l_mstring.
+        REPLACE '&' WITH messtab-msgv3 INTO l_mstring.
+        REPLACE '&' WITH messtab-msgv4 INTO l_mstring.
+      ENDIF.
+      CONDENSE l_mstring.
+      it_alv-text = l_mstring .
+    ELSE.
+      it_alv-text = '记录创建失败，请检查数据'.
+    ENDIF.
+
+    APPEND it_alv .
+    CLEAR it_alv .
+  ELSE .
+    it_alv-pernr = p_record-pernr .
+    it_alv-msgtp = 'S' .
+    it_alv-status = '@08@'.
+    it_alv-text = '记录已创建'.
+    APPEND it_alv .
+    CLEAR it_alv .
+  ENDIF.
+
+  REFRESH bdcdata.
+
+ENDFORM.                    "BDC_TRANSACTION
+
+*----------------------------------------------------------------------*
+*        Start new screen                                              *
+*----------------------------------------------------------------------*
+FORM bdc_dynpro USING program dynpro.
+  CLEAR bdcdata.
+  bdcdata-program  = program.
+  bdcdata-dynpro   = dynpro.
+  bdcdata-dynbegin = 'X'.
+  APPEND bdcdata.
+ENDFORM.                    "BDC_DYNPRO
+
+*----------------------------------------------------------------------*
+*        Insert field                                                  *
+*----------------------------------------------------------------------*
+FORM bdc_field USING fnam fval.
+  CLEAR bdcdata.
+  bdcdata-fnam = fnam.
+  bdcdata-fval = fval.
+  APPEND bdcdata.
+ENDFORM.                    "BDC_FIELD
+
+
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  upload_data
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_PA_FILE  text
+*----------------------------------------------------------------------*
+FORM upload_data USING p_pa_file.
+  DATA: l_filename TYPE string,
+        l_filelength        TYPE i.
+  DATA : has_field_separator.
+
+  has_field_separator  = '#'.
+  l_filename =  p_pa_file.
+  CLEAR l_filelength.
+
+  CLEAR : record[].
+  CALL METHOD cl_gui_frontend_services=>gui_upload  "UNI
+  EXPORTING
+    filename                = l_filename
+    filetype                = 'ASC'
+    has_field_separator     = has_field_separator
+  IMPORTING
+    filelength              = l_filelength
+  CHANGING
+*   without header line
+    data_tab                = record[]
+  EXCEPTIONS
+    file_open_error         = 1
+    file_read_error         = 2
+    no_batch                = 3
+    gui_refuse_filetransfer = 4
+    invalid_type            = 5
+    no_authority            = 6
+    unknown_error           = 7
+    bad_data_format         = 8
+    header_not_allowed      = 9
+    separator_not_allowed   = 10
+    header_too_long         = 11
+    unknown_dp_error        = 12
+    access_denied           = 13
+    OTHERS                  = 14.
+
+  IF sy-subrc = 5.
+    EXIT.
+  ENDIF.
+  DELETE record[] WHERE pernr IS INITIAL .
+  IF sy-subrc NE 0.
+    MESSAGE s000(zhr01) WITH 'file upload error'.
+*    RAISE UPLOAD_ERROR.            "dump ??
+  ENDIF.
+
+ENDFORM.                    "upload_data
+
+*&---------------------------------------------------------------------*
+*&      Form  err_message
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM err_message .
+  DATA l_mstring(480) TYPE c.
+
+  LOOP AT messtab WHERE msgtyp = 'E'.
+    MOVE record TO err_table.
+    SELECT SINGLE * FROM t100 WHERE sprsl = messtab-msgspra
+                              AND   arbgb = messtab-msgid
+                              AND   msgnr = messtab-msgnr.
+    IF sy-subrc = 0.
+      l_mstring = t100-text.
+      IF l_mstring CS '&1'.
+        REPLACE '&1' WITH messtab-msgv1 INTO l_mstring.
+        REPLACE '&2' WITH messtab-msgv2 INTO l_mstring.
+        REPLACE '&3' WITH messtab-msgv3 INTO l_mstring.
+        REPLACE '&4' WITH messtab-msgv4 INTO l_mstring.
+      ELSE.
+        REPLACE '&' WITH messtab-msgv1 INTO l_mstring.
+        REPLACE '&' WITH messtab-msgv2 INTO l_mstring.
+        REPLACE '&' WITH messtab-msgv3 INTO l_mstring.
+        REPLACE '&' WITH messtab-msgv4 INTO l_mstring.
+      ENDIF.
+      CONDENSE l_mstring.
+      SHIFT l_mstring RIGHT BY 4 PLACES.
+      MOVE l_mstring TO err_table-msg.
+      APPEND err_table.
+    ENDIF.
+  ENDLOOP.
+
+ENDFORM.                    " err_message
+*&---------------------------------------------------------------------*
+*&      Form  get_filename
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_PA_FNAME text
+*----------------------------------------------------------------------*
+FORM get_filename  CHANGING p_pa_fname.
+
+* data definitions
+  DATA: l_initial_directory TYPE string,
+        l_filename          TYPE string,
+        l_path              TYPE string,
+        l_fullpath          TYPE string,
+        l_rc                TYPE sy-subrc,
+        l_filetable         TYPE filetable,
+        l_filelength        TYPE i.
+
+  l_filename = p_pa_fname.
+
+  CALL METHOD cl_gui_frontend_services=>file_open_dialog
+    EXPORTING
+      default_filename        = l_filename
+      initial_directory       = l_initial_directory
+    CHANGING
+      file_table              = l_filetable
+      rc                      = l_rc
+    EXCEPTIONS
+      file_open_dialog_failed = 1
+      cntl_error              = 2
+      error_no_gui            = 3
+      not_supported_by_gui    = 4.
+
+  IF sy-subrc NE 0 OR l_rc LT 0.
+    RAISE upload_error.
+  ELSE.
+    IF l_rc = 1.
+      READ TABLE l_filetable INTO l_fullpath INDEX 1.
+      p_pa_fname = l_fullpath.
+    ELSE.
+      EXIT.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.                    " get_filename
+
+*&---------------------------------------------------------------------*
+*&      Form  write_file
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_DATA_TAB text
+*      -->P_FNAME    text
+*----------------------------------------------------------------------*
+FORM write_file  TABLES   p_data_tab
+                 USING    p_fname LIKE rlgrap-filename.
+  CLEAR v_line.
+  DESCRIBE TABLE p_data_tab LINES v_line.
+  IF v_line = 0.
+    EXIT.
+  ENDIF.
+
+  CALL FUNCTION 'WS_DOWNLOAD'
+    EXPORTING
+      filename                = p_fname
+      filetype                = 'ASC'
+    TABLES
+      data_tab                = p_data_tab
+    EXCEPTIONS
+      file_open_error         = 1
+      file_write_error        = 2
+      invalid_filesize        = 3
+      invalid_type            = 4
+      no_batch                = 5
+      unknown_error           = 6
+      invalid_table_width     = 7
+      gui_refuse_filetransfer = 8
+      customer_error          = 9
+      no_authority            = 10
+      OTHERS                  = 11.
+
+  IF sy-subrc <> 0.
+*    MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*            WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+
+ENDFORM.                    "WRITE_FILE
+
+
+*&---------------------------------------------------------------------*
+*&      Form  EXCELL_DOWN
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->IT_DOWN    text
+*----------------------------------------------------------------------*
+FORM excell_down TABLES it_down.
+
+  DATA: l_canc,
+        default_filename LIKE  rlgrap-filename,
+        actual_filename LIKE  rlgrap-filename.
+
+  CALL FUNCTION 'DOWNLOAD'
+    EXPORTING
+      filename           = 'D:\HR.XLS'
+      filetype           = 'DAT'
+      filetype_no_change = 'X'
+      filetype_no_show   = 'X'
+    IMPORTING
+      act_filename       = actual_filename
+      cancel             = l_canc
+    TABLES
+      data_tab           = it_down.
+
+  IF sy-subrc EQ 0.
+    IF l_canc EQ 'X'.
+      MESSAGE s016(pg) WITH 'DOWNLOADING CANCELED'.
+    ELSE.
+      MESSAGE s016(pg) WITH 'SUCCESSFUL DOWNLOADING'.
+    ENDIF.
+  ELSE.
+    MESSAGE s016(pg) WITH 'ERROR WHILE DOWNLOADING'.
+  ENDIF.
+ENDFORM.                    " EXCELL_DOWN
+*&---------------------------------------------------------------------*
+*&      Form  SHOW_ALV
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM show_alv .
+  PERFORM layout_build.
+  PERFORM fieldcat_init USING fieldcat[].
+  PERFORM display_alv.
+ENDFORM.                    " SHOW_ALV
+*&---------------------------------------------------------------------*
+*&      Form  layout_build
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM layout_build .
+* i_layout-box_fieldname        = 'FLAG'.
+  i_layout-colwidth_optimize    = 'X'.     "优化列宽选项是否设置
+  i_layout-zebra                = 'X'.
+  i_layout-detail_initial_lines = 'X'.
+  i_layout-no_vline             = 'X'.     " layout_build
+*  i_layout-lights_fieldname     = 'EXCEPTION'.
+*  i_layout-coltab_fieldname     = 'IT_CELL'.
+*  i_layout-info_fieldname       = 'COLOR'.
+ENDFORM.                    " LAYOUT_BUILD
+*&---------------------------------------------------------------------*
+*&      Form  FIELDCAT_INIT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_FIELDCAT[]  text
+*----------------------------------------------------------------------*
+FORM fieldcat_init  USING   u_er_fieldcat TYPE slis_t_fieldcat_alv.
+  DATA: afieldcat TYPE slis_fieldcat_alv,
+          pos TYPE i.
+  CLEAR pos.
+  DEFINE d_get_field.
+    pos = pos + 1.
+    clear afieldcat.
+    afieldcat-col_pos  = pos.
+    afieldcat-fieldname  = &1.
+    afieldcat-seltext_l = &2.
+    afieldcat-key = &3.
+*    if &1 eq 'RLGPRO'.
+*      afieldcat-ref_tabname = 'ZDUMPK'.
+*      afieldcat-ref_fieldname = 'LGPRO'.
+*    endif.
+    append afieldcat to u_er_fieldcat.
+  END-OF-DEFINITION.
+*  d_get_field  'EXCEPTION'        ' 判断信息'  ''  .
+  d_get_field  'STATUS'           ' 状态'  ''  .
+  d_get_field  'PERNR'         '标识ID'  ''  .
+*  d_get_field  'SUBTY'         ' 子信息类型'  ''  .
+*  d_get_field  'BEGDA'          ' 开始时间'  ''  .
+*  d_get_field  'ENDDA'           ' 结束时间'  ''  .
+*  d_get_field  'USRID'           ' 通讯信息'  ''  .
+  d_get_field  'TEXT'           ' 批导情况'  ''  .
+
+ENDFORM.                    " FIELDCAT_INIT
+*&---------------------------------------------------------------------*
+*&      Form  DISPLAY_ALV
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM display_alv .
+  DATA:BEGIN OF itab1 OCCURS 0.
+*  DATA:exception(1).
+  DATA:status(8).
+  DATA:msgtp TYPE bdc_mart.
+  DATA:text(100).
+          INCLUDE STRUCTURE itab.
+  DATA:END OF itab1.
+
+
+
+  LOOP AT it_alv.
+    IF it_alv-msgtp = 'E'.
+      time_e = time_e + 1.
+    ELSEIF it_alv-msgtp = 'S'.
+      time_s = time_s + 1  .
+    ENDIF.
+  ENDLOOP.
+*
+  time_e_txt = time_e.
+  time_s_txt = time_s.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program          = sy-repid
+      i_grid_settings             = gridlsl
+      it_fieldcat                 = fieldcat
+      is_layout                   = i_layout
+      i_callback_html_top_of_page = 'HTML_TOP_OF_PAGE'    " 调用ALV表头显示
+      i_html_height_top           = 15             " 设置抬头宽度
+    TABLES
+      t_outtab                    = it_alv.
+ENDFORM.                    " DISPLAY_ALV
+
+
+*&---------------------------------------------------------------------*
+*&      Form  html_top_of_page
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->DOCUMENT   text
+*----------------------------------------------------------------------*
+FORM html_top_of_page USING document TYPE REF TO cl_dd_document.
+*    DATA: text TYPE sdydo_text_element.
+  DATA: m_p TYPE i ,
+        m_buffer TYPE string .
+
+*  CONCATENATE  '<HTML><CENTER><H1>' '批导情况统计' '</H1></CENTER></HTML>' INTO m_buffer.  " 居中  <H1>设置字体格式
+  CONCATENATE  '<HTML><LEFT><A1>' '批导情况统计' '</A1></CENTER></HTML>' INTO m_buffer.  " 居中  <H1>设置字体格式
+  CALL METHOD document->html_insert
+    EXPORTING
+      contents = m_buffer
+    CHANGING
+      position = m_p.
+
+*************************
+  CONCATENATE '<P ALIGN = LEFT >成功录入： ' time_s_txt  '条；'  '录入出错:' time_e_txt  '条.'   INTO m_buffer .
+
+  CALL METHOD document->html_insert
+    EXPORTING
+      contents = m_buffer
+    CHANGING
+      position = m_p.
+
+ENDFORM.                    "HTML_TOP_OF_PAGE
+*&---------------------------------------------------------------------*
+*&      Form  CHECK_EXSITED
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      <--P_RECORD  text
+*----------------------------------------------------------------------*
+FORM check_exsited  CHANGING p_record TYPE tab_str
+                              p_result TYPE char1 .
+  DATA : lv_objid TYPE hrobjid .
+
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = p_record-pernr
+    IMPORTING
+      output = lv_objid.
+
+
+  CALL FUNCTION 'RH_STRUC_GET'
+    EXPORTING
+      act_otype       = 'P'
+      act_objid       = lv_objid
+      act_wegid       = 'P_S_O'
+      act_plvar       = '01'
+      act_begda       = sy-datum
+      act_endda       = sy-datum
+      authority_check = ''
+    EXCEPTIONS
+      no_plvar_found  = 1
+      no_entry_found  = 2
+      OTHERS          = 3.
+
+  IF sy-subrc NE 0.
+    p_result = 'E'.
+  ENDIF.
+ENDFORM.                    " CHECK_EXSITED
