@@ -1,0 +1,29 @@
+form sf .
+  call function 'SSF_FUNCTION_MODULE_NAME'
+    exporting
+      formname = 'ZSF'
+*     VARIANT  = ' '
+*     DIRECT_CALL              = ' '
+    importing
+      fm_name  = fm_name
+* EXCEPTIONS
+*     NO_FORM  = 1
+*     NO_FUNCTION_MODULE       = 2
+*     OTHERS   = 3
+    .
+  if sy-subrc <> 0.
+* Implement suitable error handling here
+  endif.
+*手动增加以下程序
+  call function fm_name
+    exporting
+      user_settings    = space
+    tables
+      gt_table         = gt_itab        "ALV数据内容传入 SF
+    exceptions
+      formatting_error = 1
+      internal_error   = 2
+      send_error       = 3
+      user_canceled    = 4
+      others           = 5.
+endform.
