@@ -1,0 +1,68 @@
+*&---------------------------------------------------------------------*
+*& Report  ZUPLOAD_EXCEL
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+REPORT ZUPLOAD_EXCEL.
+
+TYPE-POOLS TRUXS.
+DATA:IT_RAW TYPE TRUXS_T_TEXT_DATA.
+
+*定义一个内表来存储数据，内表的列数和要传得数据的列数要相同，其按照列来匹配传值
+DATA: BEGIN OF GT_DATA OCCURS 0,
+        COL1  TYPE CHAR200,
+        COL2  TYPE CHAR200,
+        COL3  TYPE CHAR200,
+        COL4  TYPE CHAR200,
+        COL5  TYPE CHAR200,
+        COL6  TYPE CHAR200,
+        COL7  TYPE CHAR200,
+        COL8  TYPE CHAR200,
+        COL9  TYPE CHAR200,
+        COL10 TYPE CHAR200,
+        COL11 TYPE CHAR200,
+      END OF GT_DATA.
+
+
+PARAMETERS:P_FILE TYPE RLGRAP-FILENAME.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR P_FILE.
+
+  CLEAR P_FILE.
+
+  CALL FUNCTION 'F4_FILENAME'
+    IMPORTING
+      FILE_NAME = P_FILE. "返回文件名
+
+*Excel传值
+START-OF-SELECTION.
+  PERFORM EXCELTOTAB.
+*  PERFORM DISPLAY_DATA.
+
+*&---------------------------------------------------------------------*
+*&      Form  exceltotab
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM EXCELTOTAB .
+
+  CALL FUNCTION 'TEXT_CONVERT_XLS_TO_SAP'
+    EXPORTING
+*     I_FIELD_SEPERATOR    =
+*     i_line_header        = 'X'
+      I_TAB_RAW_DATA       = IT_RAW " WORK TABLE
+      I_FILENAME           = P_FILE
+    TABLES
+      I_TAB_CONVERTED_DATA = GT_DATA[] "ACTUAL DATA
+    EXCEPTIONS
+      CONVERSION_FAILED    = 1
+      OTHERS               = 2.
+
+  IF SY-SUBRC <> 0.
+    MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+    WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+
+ENDFORM.                    "exceltotab
