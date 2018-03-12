@@ -1,0 +1,226 @@
+# 9036 血型批导
+
+*&---------------------------------------------------------------------*
+*& Report  ZR_HR_BDC_9036
+*&
+*&---------------------------------------------------------------------*
+*&   xuhao
+*&   20150921
+*&---------------------------------------------------------------------*
+
+REPORT zr_hr_bdc_9036.
+
+**********************************************************************   导入数据声明
+* UpLoad Data Record.
+TYPES: BEGIN OF  tab_str,
+         pernr(008),
+         begda(008),
+         endda(008),
+         zxx(004),
+
+
+
+
+
+       END OF tab_str.
+
+* Down Load Data Format.  字段描述
+DATA : BEGIN OF it_down OCCURS 0,
+         pernr(020),
+         begda(020),
+         endda(020),
+         zxx(020),
+
+
+
+
+
+       END OF it_down.
+**********************************************************************
+
+
+DATA: record TYPE tab_str OCCURS 0 WITH HEADER LINE.
+DATA: BEGIN OF err_table OCCURS 0.
+        INCLUDE TYPE tab_str.
+DATA: msg(100) TYPE c.
+DATA: END OF err_table.
+DATA : v_line  TYPE i.            "Record number
+DATA: g_line TYPE i .
+
+
+INCLUDE zr_hr_bdc_data.
+
+
+**********************************************************************    数据地址
+INITIALIZATION.
+  pa_file = 'C:\9036.txt'.        "数据存放位置
+  pa_flog = 'C:\9036_err.txt'.    "错误日志存放位置
+*  b_write = 'X'.         "是否屏幕显示结果信息， X 为显示
+**********************************************************************
+
+
+AT SELECTION-SCREEN.
+  CASE sscrfields-ucomm.
+    WHEN 'FC01'.  "template down
+      PERFORM excell_download.          "下载数据模版
+      p_fun1 = 'X'.
+  ENDCASE.
+
+*----------------------------------------------------------------------*
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR pa_file.
+*----------------------------------------------------------------------*
+  PERFORM get_filename CHANGING pa_file.
+
+*----------------------------------------------------------------------*
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR pa_flog.
+*----------------------------------------------------------------------*
+  PERFORM get_filename CHANGING pa_flog.
+
+START-OF-SELECTION.
+  PERFORM upload_data USING pa_file.  "upload PC file to itab
+  PERFORM insert_data.
+  PERFORM write_file TABLES err_table
+                     USING  pa_flog.  "Write file-data
+
+  """"附加ALV显示
+  PERFORM show_alv .
+*
+*  LOOP AT err_table.
+*    WRITE: / err_table.
+*  ENDLOOP.
+*
+*  DESCRIBE TABLE record LINES v_line.
+*  WRITE:/ 'Read data: ', v_line.
+*  DESCRIBE TABLE err_table LINES v_line.
+*  WRITE:/ 'Error data: ', v_line.
+*
+*  WRITE:/'Finish.'.       " 显示错误数据记录
+
+
+*&---------------------------------------------------------------------*
+*&      Form  insert_data
+*&---------------------------------------------------------------------*
+*       " 写入数据主函数，更改屏幕录入字段
+*----------------------------------------------------------------------*
+FORM insert_data .
+
+  CLEAR v_line.
+  DESCRIBE TABLE record LINES v_line.
+  IF v_line = 0.
+    EXIT.
+  ENDIF.
+
+
+  LOOP AT record.
+
+    PERFORM bdc_dynpro      USING 'SAPMP50A' '1000'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+                                  '=INS'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+                                  'RP50G-CHOIC'.
+    PERFORM bdc_field       USING 'RP50G-PERNR'
+                                  record-pernr.
+    PERFORM bdc_field       USING 'RP50G-TIMR6'
+                                  'X'.
+    PERFORM bdc_field       USING 'RP50G-BEGDA'
+                                  record-begda.
+    PERFORM bdc_field       USING 'RP50G-ENDDA'
+                                  record-endda.
+    PERFORM bdc_field       USING 'RP50G-CHOIC'
+                                  '9036'.
+
+
+
+    PERFORM bdc_dynpro      USING 'MP903600' '2000'.
+    PERFORM bdc_field       USING 'BDC_CURSOR'
+                                  'P9036-BEGDA'.
+    PERFORM bdc_field       USING 'BDC_OKCODE'
+                                  '=UPD'.
+    PERFORM bdc_field       USING 'P9036-BEGDA'
+                                  record-begda.
+    PERFORM bdc_field       USING 'P9036-ENDDA'
+                                  record-endda.
+    PERFORM bdc_field       USING 'P9036-ZXX'
+                                  record-zxx.
+
+
+
+
+    PERFORM bdc_transaction USING 'PA30' CHANGING record.
+
+    g_line = g_line + 1.
+    PERFORM progress_indicator USING g_line.
+
+    PERFORM err_message.
+*    IF b_write = 'X'.
+*      WRITE : / record  COLOR 1.
+*      SKIP 1.
+*    ENDIF.
+  ENDLOOP.
+
+ENDFORM.                    " insert_data
+
+
+*&---------------------------------------------------------------------*
+*&      Form  progress_indicator
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_SY_TABIX text
+*----------------------------------------------------------------------*
+FORM progress_indicator  USING    p_sy_tabix.
+
+  DATA: s_string TYPE string,
+        pernt(6) TYPE p DECIMALS 2,
+        percc(6) TYPE c,
+        l_idx(6) TYPE c.
+  v_line = v_line + 1.
+  pernt = p_sy_tabix / v_line  * 100.
+  percc+0(5) = pernt.
+  percc+5(1) = '%'.
+  l_idx = p_sy_tabix.
+  CONCATENATE '正在读取第' l_idx '笔数据.......' INTO s_string SEPARATED BY space.
+  CONDENSE s_string.
+
+*  move record to s_string.
+  CONDENSE s_string.
+  CALL FUNCTION 'PROGRESS_INDICATOR'
+    EXPORTING
+      i_text               = '&1 &3 &4  &2 '
+      i_msgv1              = percc
+      i_msgv2              = s_string
+*     i_msgv3              = record-massg_006
+*     i_msgv4              = record-plans_008
+      i_processed          = v_line
+      i_total              = p_sy_tabix
+      i_output_immediately = 'X'.
+
+
+ENDFORM.                    " progress_indicator
+
+
+
+
+*&---------------------------------------------------------------------*
+*&      Form  EXCELL_DOWN
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM excell_download.
+  CLEAR: it_down, it_down[].
+  MOVE:     '人员编号'                  TO it_down-pernr,       "将字段描述赋值
+            '开始日期'                  TO it_down-begda,
+            '结束日期'                  TO it_down-endda,
+            '血型'                      TO it_down-zxx.
+
+
+
+
+
+
+
+  APPEND it_down.
+
+  PERFORM excell_down TABLES it_down.
+
+ENDFORM.                    "EXCELL_DOWNLOAD
