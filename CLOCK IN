@@ -1,0 +1,124 @@
+-----------打卡
+ 考勤相关：  ZR_HR_PA005_1 人员异动情况表
+ZHRPP06 车间生产线平均灌装天数表
+打卡
+  CALL FUNCTION 'HR_PERSON_READ_WORK_SCHEDULE'
+      EXPORTING
+        BEGIN_DATE = P_BEGDA
+        END_DATE   = P_ENDDA
+*       GROUPING_DWS       =
+*       GROUPING_ATTENDENCE             =
+*       GROUPING_SUBSTITUTE             =
+*       READ_FROM_DATABASE = ' '
+*       IM_READ_NO_LOCKED_RECORDS       =
+      TABLES
+        PERNR_TAB  = LT_PERNR_TAB[]   （入参表）
+        PSP        = LT_PSP
+        DAY_PSP    = LT_DAY_PSP.
+*      CHANGING
+*        CH_AUTH_INFTY_TAB  = LT_INFTY_TAB
+*      EXCEPTIONS
+*        ERROR_IN_BUILD_PSP = 1
+*        OTHERS             = 2.
+
+LT_PSP[]-MOTPR (计划工作时长)
+TPROG(REST)  TAGTY = 1
+
+SELECT * INTO TABLE LT_PA2011 FROM TEVEN
+ WHERE PERNR = T_KQCL-PERNR AND LDATE = T_KQCL-BEGDA.
+        IF LT_PA2011[] IS NOT INITIAL.
+          CALL FUNCTION 'HR_TMW_DB_UPDATE_TEVENT'
+            TABLES
+              DEL_TEVEN      = LT_PA2011 
+ （每个表必须都得传输过去，可以为空，但是必须要有）可以同时insert，delete
+              INS_TEVEN      = INS_TEVEN
+      VEN_MORE = DEL_TEVEN_MORE
+      INS_TEVEN_MORE = INS_TEVEN_MORE
+            EXCEPTIONS
+              INSERT_FAILED  = 1
+              UPDATE_FAILED  = 2
+              OTHERS         = 3.
+ LOOP AT LT_PA2011.
+CALL FUNCTION 'NUMBER_GET_NEXT'
+Insert 必须配合这个函数使用
+ EXPORTING
+                  NR_RANGE_NR             = '01'
+                  OBJECT                  = 'PD_SEQ_NR'
+                  QUANTITY                = '00000000000000000001'
+*                 SUBOBJECT               = ' '
+*                 TOYEAR                  = '0000'
+*                 IGNORE_BUFFER           = ' '
+                IMPORTING
+                  NUMBER                  = INS_TEVEN-PDSNR
+*                 QUANTITY                = L_NUM
+*                 RETURNCODE              =
+                EXCEPTIONS
+   INTERVAL_NOT_FOUND      = 1
+                  NUMBER_RANGE_NOT_INTERN = 2
+                  OBJECT_NOT_FOUND        = 3
+                  QUANTITY_IS_0           = 4
+                  QUANTITY_IS_NOT_1       = 5
+                  INTERVAL_OVERFLOW       = 6
+                  BUFFER_OVERFLOW         = 7
+                  OTHERS                  = 8.
+              IF SY-SUBRC <> 0.
+* Implement suitable error handling here
+              ENDIF.
+  ENDLOOP.
+ 考勤FM
+HR_READ_TIMEDATA_PSP
+HR_ABS_ATT_TIMES_AT_ENTRY
+
+ZPUBLIC_KQXX  考勤信息的读取
+
+
+ DATA:BEGIN OF MT_PA2002 OCCURS 0,
+         PERNR TYPE PERSNO,
+         SMON  TYPE SMON,
+         AWART LIKE PA2002-AWART,
+         ZRS   TYPE P DECIMALS 2, "ci次数
+         ENDDA TYPE DATS,
+       END OF MT_PA2002.
+  DATA :LT_2002 LIKE TABLE OF MT_PA2002 WITH HEADER LINE.
+
+  LOOP AT GT_PA2002  .
+    MT_PA2002-PERNR = GT_PA2002-PERNR.
+    MT_PA2002-AWART = GT_PA2002-AWART.
+    IF GT_PA2002-ENDDA+6(2) >= '24'.
+      CALL FUNCTION 'FIMA_DATE_CREATE'
+        EXPORTING
+          I_DATE   = GT_PA2002-ENDDA
+          I_MONTHS = +1
+        IMPORTING
+          E_DATE   = GT_PA2002-ENDDA.
+      MT_PA2002-SMON = GT_PA2002-ENDDA+0(6) .
+    ELSE.
+      MT_PA2002-SMON = GT_PA2002-ENDDA+0(6).
+    ENDIF.
+    APPEND MT_PA2002.CLEAR MT_PA2002.
+  ENDLOOP.
+
+  SORT MT_PA2002 BY PERNR SMON   AWART ASCENDING .
+
+  LOOP AT MT_PA2002 .
+    IF MT_PA2002-AWART = '1010' OR MT_PA2002-AWART = '1011'
+      OR MT_PA2002-AWART = '1012'   .
+      CQTS = CQTS + 1.
+      CQTS = CQTS * 1 / 2.
+    ELSE.
+      CQTS = CQTS + 1. "出勤天数
+    ENDIF.
+
+    AT END OF AWART.
+      LT_2002-PERNR = MT_PA2002-PERNR.
+      LT_2002-SMON = MT_PA2002-SMON.
+      LT_2002-AWART = MT_PA2002-AWART.
+      LT_2002-ZRS = CQTS.
+      APPEND LT_2002.CLEAR LT_2002.
+      CLEAR:CQTS.
+    ENDAT.
+  ENDLOOP.
+  SORT LT_2002 BY PERNR SMON AWART.
+
+
+
