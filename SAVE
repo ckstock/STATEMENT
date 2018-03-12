@@ -1,0 +1,350 @@
+ hrp系列：
+FORM SAVE .
+  DATA: REC_O_RETURN     TYPE BAPIRET1,
+        LS_O_RETURN      TYPE BAPIRETURN1,
+        LS_KEY           TYPE BAPIPAKEY,
+        LV_VALIDITYBEGIN LIKE BAPIPAKEY-VALIDBEGIN.
+  DATA:LT_HRP9102 LIKE TABLE OF HRP9102 WITH HEADER LINE.
+  DATA:INNN LIKE TABLE OF P9102 WITH HEADER LINE.
+  DATA: O_RETURN LIKE TABLE OF   BAPIRETURN1 WITH HEADER LINE.
+  LOOP AT RESULT.
+    CLEAR:REC_O_RETURN, LS_O_RETURN, LS_KEY, LV_VALIDITYBEGIN.
+*    LOOP AT RESULT.
+    CLEAR:LT_HRP9102,LT_HRP9102[].
+    SELECT * INTO CORRESPONDING FIELDS OF TABLE LT_HRP9102 FROM HRP9102 WHERE OBJID = RESULT-OBJID.
+    IF LT_HRP9102[] IS NOT INITIAL.
+      LOOP AT LT_HRP9102.
+        CLEAR:INNN,INNN[].
+*          MOVE-CORRESPONDING RESULT TO INNN.
+*          INNN-ZXZDZJJ = RESULT-DZJJ.
+        INNN-OBJID = RESULT-OBJID.
+        INNN-AEDTM = SY-DATUM.
+        INNN-PLVAR = '01'.
+        INNN-MANDT = SY-MANDT.
+        INNN-UNAME = SY-UNAME.
+        INNN-BEGDA =  LT_HRP9102-BEGDA.
+        INNN-ENDDA =  LT_HRP9102-ENDDA.
+        INNN-OTYPE =   'O'.
+        INNN-ISTAT =   '1'.
+        INNN-INFTY =   '9102'.
+*          INNN-SUBTY =   '9104'.
+        APPEND INNN.CLEAR INNN.
+        CALL FUNCTION 'RH_DELETE_INFTY'
+          EXPORTING
+*           LOAD                = 'X'
+            VTASK               = 'D'
+*           ORDER_FLG           = 'X'
+*           COMMIT_FLG          = 'X'
+*           AUTHY               = 'X'
+*           PPPAR_IMP           =
+*           KEEP_LUPD           =
+*           WORKF_ACTV          = 'X'
+          TABLES
+            INNNN               = INNN[]
+*           ILFCODE             =
+          EXCEPTIONS
+            ERROR_DURING_DELETE = 1
+            NO_AUTHORIZATION    = 2
+            DELETE_FIRST_RECORD = 3
+            CORR_EXIT           = 4
+            OTHERS              = 5.
+        IF SY-SUBRC <> 0.
+* Implement suitable error handling here
+        ENDIF.
+
+      ENDLOOP.
+    ENDIF.
+
+    CLEAR:INNN,INNN[].
+*      MOVE-CORRESPONDING RESULT TO INNN.
+    INNN-OBJID = RESULT-OBJID.
+    INNN-AEDTM = SY-DATUM.
+    INNN-PLVAR = '01'.
+    INNN-MANDT = SY-MANDT.
+    INNN-UNAME = SY-UNAME.
+    INNN-BEGDA =  TIME1.
+*    INNN-ENDDA =  TIME2.
+    INNN-ENDDA =   '99991231'.
+    INNN-ZMDDJWB =  RESULT-MDDJ.
+    INNN-ZMDMJ =  RESULT-ZMDMJ.
+    IF RESULT-MDDJ = 'A1'.
+      INNN-ZMDDJ =   '01'.
+    ELSEIF   RESULT-MDDJ = 'A2'.
+      INNN-ZMDDJ =   '02'.
+    ELSEIF   RESULT-MDDJ = 'A3'.
+      INNN-ZMDDJ =   '03'.
+    ELSEIF   RESULT-MDDJ = 'B1'.
+      INNN-ZMDDJ =   '04'.
+    ELSEIF   RESULT-MDDJ = 'B2'.
+      INNN-ZMDDJ =   '05'.
+    ELSEIF   RESULT-MDDJ = 'B3'.
+      INNN-ZMDDJ =   '06'.
+    ELSEIF   RESULT-MDDJ = 'C1'.
+      INNN-ZMDDJ =   '07'.
+    ENDIF.
+    INNN-OTYPE =   'O'.
+    INNN-ISTAT =   '1'.
+    INNN-INFTY =   '9102'.
+*          INNN-SUBTY =   '9104'.
+    APPEND INNN.CLEAR INNN.
+
+
+    CALL FUNCTION 'RH_INSERT_INFTY'
+      EXPORTING
+        FCODE               = 'INSE'
+        VTASK               = 'D'
+        ORDER_FLG           = 'X'
+        COMMIT_FLG          = 'X'
+        AUTHY               = 'X'
+*       PPPAR_IMP           =
+*       OLD_TABNR           = ' '
+*       REPID               = ' '
+*       FORM                = ' '
+*       KEEP_LUPD           =
+        WORKF_ACTV          = 'X'
+      TABLES
+        INNNN               = INNN[]
+*       ILFCODE             =
+      EXCEPTIONS
+        NO_AUTHORIZATION    = 1
+        ERROR_DURING_INSERT = 2
+        REPID_FORM_INITIAL  = 3
+        CORR_EXIT           = 4
+        BEGDA_GREATER_ENDDA = 5
+        OTHERS              = 6.
+    IF  SY-SUBRC = 0.
+      O_RETURN-MESSAGE_V1 = '门店等级,保存成功'.
+**********************
+      O_RETURN-TYPE    = 'S'.                   "消息类型
+      O_RETURN-ID      = RESULT-OBJID.     "员工编号
+***************
+      APPEND O_RETURN.CLEAR O_RETURN.
+    ELSE.
+      O_RETURN-MESSAGE_V1 = '门店等级,保存失败'.
+**********************
+      O_RETURN-TYPE    = 'S'.                   "消息类型
+      O_RETURN-ID      = RESULT-OBJID.     "员工编号
+***************
+      APPEND O_RETURN.CLEAR O_RETURN.
+    ENDIF.
+    CLEAR:INNN,INNN[].
+*    ENDLOOP.
+  ENDLOOP.
+
+ENDFORM.
+
+pa系列
+
+DATA:LT_PA0015 LIKE TABLE OF PA0015 WITH HEADER LINE.
+    DATA:LS_PA0015        TYPE P0015,
+         REC_RETURN       TYPE BAPIRET1,
+         LS_RETURN        TYPE BAPIRETURN1,
+         LS_KEY           TYPE BAPIPAKEY,
+         LV_VALIDITYBEGIN LIKE BAPIPAKEY-VALIDBEGIN.
+
+    DATA:LT_0015 TYPE P0015.
+
+    SELECT * INTO CORRESPONDING FIELDS OF TABLE GT_ZNJ_GLJLB  FROM  ZNJ_GLJLB ."where
+
+    LOOP AT IN_RESULT.  "鼓励奖明细
+*      CLEAR LT_PA0015.CLEAR LT_PA0015[].
+
+      CALL FUNCTION 'BAPI_EMPLOYEE_ENQUEUE'
+        EXPORTING
+          NUMBER = IN_RESULT-PERNR
+        IMPORTING
+          RETURN = REC_RETURN.
+      IF REC_RETURN IS INITIAL .   "人员没有被锁定
+        MOVE-CORRESPONDING IN_RESULT TO LS_PA0015.
+*************************
+        IF IN_RESULT-ZWJB_1 IS NOT INITIAL.
+          CONCATENATE IN_DATE+0(4) '0623' INTO TIMES1.
+          LS_PA0015-BEGDA = TIMES1.
+          LS_PA0015-ENDDA = TIMES1.
+        ELSE.
+          CONCATENATE IN_DATE+0(4) '1223' INTO TIMES2.
+          LS_PA0015-BEGDA = TIMES2.
+          LS_PA0015-ENDDA = TIMES2.
+        ENDIF.
+
+        LS_PA0015-PERNR = IN_RESULT-PERNR.
+        LS_PA0015-SUBTY = '3024'.
+*        LS_PA0015-SUBTY = '0015'.
+        LS_PA0015-SEQNR = '000'.
+        LS_PA0015-AEDTM =  SY-DATUM.
+        LS_PA0015-UNAME =  SY-UNAME.
+        LS_PA0015-LGART =  '3024'.  "3024工资项
+        LS_PA0015-BETRG =  IN_RESULT-SHJE. "享受金额
+        LS_PA0015-WAERS = 'CNY'.
+
+        CALL FUNCTION 'BAPI_EMPLOYEE_ENQUEUE'
+          EXPORTING
+            NUMBER = LS_PA0015-PERNR
+          IMPORTING
+            RETURN = REC_RETURN.
+
+*        IF REC_RETURN IS INITIAL .   "人员未被锁定
+
+        CALL FUNCTION 'HR_INFOTYPE_OPERATION'
+          EXPORTING
+            INFTY         = '0015'
+            NUMBER        = LS_PA0015-PERNR
+            VALIDITYEND   = LS_PA0015-ENDDA
+            VALIDITYBEGIN = LS_PA0015-BEGDA
+            RECORD        = LS_PA0015
+            OPERATION     = 'INS'
+          IMPORTING
+            RETURN        = LS_RETURN
+            KEY           = LS_KEY.
+
+        CALL FUNCTION 'BAPI_EMPLOYEET_DEQUEUE'       "解锁
+          EXPORTING
+            NUMBER        = LS_PA0015-PERNR
+            VALIDITYBEGIN = LV_VALIDITYBEGIN.
+        IF LS_RETURN IS   INITIAL.
+          OT_MESS-TYPE    = 'S'.                   "消息类型
+          OT_MESS-MESSAGE = '保存成功'.            "消息文本
+          OT_MESS-ID      = IN_RESULT-PERNR.     "员工编号
+          APPEND OT_MESS. CLEAR OT_MESS.
+
+        ELSE.
+
+          OT_MESS-TYPE    = LS_RETURN-TYPE.       "消息类型
+          OT_MESS-MESSAGE = LS_RETURN-MESSAGE.    "消息文本
+          OT_MESS-ID      = IN_RESULT-PERNR.    "员工编号
+*            ot_mess-message_v1      = ls_pa0015-endda.    "日期
+          APPEND OT_MESS. CLEAR OT_MESS.
+        ENDIF.
+      ELSE.  "人员没有被锁定
+        OT_MESS-TYPE    = REC_RETURN-TYPE.       "消息类型
+        OT_MESS-MESSAGE_V1 = REC_RETURN-MESSAGE.    "消息文本
+        OT_MESS-ID      = IN_RESULT-PERNR.     "员工编号
+        APPEND OT_MESS. CLEAR OT_MESS.
+        ROLLBACK WORK.
+        CALL FUNCTION 'BAPI_EMPLOYEET_DEQUEUE'       "解锁
+          EXPORTING
+            NUMBER        = LT_PA0015-PERNR
+            VALIDITYBEGIN = LV_VALIDITYBEGIN.
+      ENDIF.
+      CLEAR:LT_PA0015[],LT_PA0015.
+
+    ENDLOOP.
+***********************
+    LOOP AT OT_MESS.
+      IF OT_MESS-TYPE =  'S'.
+        DELETE OT_MESS .
+      ELSE.
+      ENDIF.
+    ENDLOOP.
+
+ pa系列 pa2006
+  DATA GT_SHOW LIKE TABLE OF GT_MAIN_DATA WITH HEADER LINE.
+  DATA:LT_PA2006 LIKE TABLE OF PA2006 WITH HEADER LINE.
+  DATA:LS_PA2006        TYPE P2006,
+       REC_RETURN       TYPE BAPIRET1,
+       LS_RETURN        TYPE BAPIRETURN1,
+       LS_KEY           TYPE BAPIPAKEY,
+       LV_VALIDITYBEGIN LIKE BAPIPAKEY-VALIDBEGIN.
+
+  LOOP AT GT_MAIN_DATA WHERE XZK = 'X' .
+    MOVE-CORRESPONDING GT_MAIN_DATA TO GT_SHOW.
+    APPEND GT_SHOW.CLEAR GT_SHOW.
+  ENDLOOP.
+
+  IF GT_SHOW[] IS NOT INITIAL.
+    SELECT * INTO CORRESPONDING FIELDS OF TABLE LT_PA2006
+      FROM PA2006 FOR ALL ENTRIES IN GT_SHOW
+      WHERE PERNR = GT_SHOW-PERNR AND   BEGDA =  GT_SHOW-BEGDA AND SUBTY = '01'."本月定额
+  ENDIF.
+
+  CALL FUNCTION 'BAPI_EMPLOYEE_ENQUEUE'
+    EXPORTING
+      NUMBER = GT_SHOW-PERNR
+    IMPORTING
+      RETURN = REC_RETURN.
+
+  IF REC_RETURN IS INITIAL .   "人员没有被锁定
+
+    IF LT_PA2006[] IS NOT INITIAL.
+      LOOP AT LT_PA2006.
+        MOVE-CORRESPONDING LT_PA2006 TO LS_PA2006.
+
+        CALL FUNCTION 'HR_INFOTYPE_OPERATION'
+          EXPORTING
+            INFTY         = '2006'
+            NUMBER        = LS_PA2006-PERNR
+            SUBTYPE       = LS_PA2006-SUBTY
+*           OBJECTID      =
+*           LOCKINDICATOR =
+            VALIDITYEND   = LS_PA2006-ENDDA
+            VALIDITYBEGIN = LS_PA2006-BEGDA
+            RECORDNUMBER  = LS_PA2006-SEQNR
+            RECORD        = LS_PA2006
+            OPERATION     = 'DEL'
+*           TCLAS         = 'A'
+*           DIALOG_MODE   = '0'
+*           NOCOMMIT      =
+*           VIEW_IDENTIFIER        =
+*           SECONDARY_RECORD       =
+          IMPORTING
+            RETURN        = LS_RETURN
+            KEY           = LS_KEY.
+        CLEAR LS_PA2006.
+      ENDLOOP.
+    ENDIF.
+
+    LOOP AT GT_SHOW.
+      LS_PA2006-PERNR = GT_SHOW-PERNR.
+      LS_PA2006-SUBTY = '01'.
+      LS_PA2006-AEDTM =  SY-DATUM.
+      LS_PA2006-UNAME =  SY-UNAME.
+      LS_PA2006-BEGDA =    GT_SHOW-BEGDA.
+      LS_PA2006-ENDDA =  GT_SHOW-ENDDA.
+      LS_PA2006-DESTA =  GT_SHOW-BEGDA.
+      LS_PA2006-DEEND =  GT_SHOW-ENDDA.
+      LS_PA2006-KTART =  GT_SHOW-KTART.
+      LS_PA2006-ANZHL =  GT_SHOW-NJDE. "年假定额
+
+      CALL FUNCTION 'HR_INFOTYPE_OPERATION'
+        EXPORTING
+          INFTY         = '2006'
+          NUMBER        = LS_PA2006-PERNR
+          VALIDITYEND   = LS_PA2006-ENDDA  " LS_PA2006-ENDDA
+          VALIDITYBEGIN = LS_PA2006-BEGDA    " LS_PA2006-BEGDA
+*         RECORDNUMBER  = LS_PA2006-SEQNR
+          RECORD        = LS_PA2006
+          OPERATION     = 'INS'
+        IMPORTING
+          RETURN        = LS_RETURN
+          KEY           = LS_KEY.
+
+      IF LS_RETURN IS   INITIAL.
+        OT_MESS-TYPE    = 'S'.                   "消息类型
+        OT_MESS-MESSAGE = '保存成功'.            "消息文本
+        OT_MESS-ID      = GT_SHOW-PERNR.     "员工编号
+        APPEND OT_MESS. CLEAR OT_MESS.
+
+      ELSE.
+
+        OT_MESS-TYPE    = LS_RETURN-TYPE.       "消息类型
+        OT_MESS-MESSAGE = LS_RETURN-MESSAGE.    "消息文本
+        OT_MESS-ID      = GT_SHOW-PERNR.    "员工编号
+*            ot_mess-message_v1      = ls_PA2006-endda.    "日期
+        APPEND OT_MESS. CLEAR OT_MESS.
+      ENDIF.
+    ENDLOOP.
+  ELSE.  "人员没有被锁定
+    OT_MESS-TYPE    = REC_RETURN-TYPE.       "消息类型
+    OT_MESS-MESSAGE_V1 = REC_RETURN-MESSAGE.    "消息文本
+    OT_MESS-ID      = GT_SHOW-PERNR.     "员工编号
+    APPEND OT_MESS. CLEAR OT_MESS.
+    ROLLBACK WORK.
+    CALL FUNCTION 'BAPI_EMPLOYEET_DEQUEUE'       "解锁
+      EXPORTING
+        NUMBER        = LT_PA2006-PERNR
+        VALIDITYBEGIN = LV_VALIDITYBEGIN.
+
+    CLEAR: LS_PA2006.
+
+
+  ENDIF.
