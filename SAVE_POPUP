@@ -1,0 +1,54 @@
+   DATA: ANTWORT TYPE C.
+  DATA: BEGIN OF LIT_SPOPLIST OCCURS 5.
+          INCLUDE STRUCTURE SPOPLI.
+  DATA: END OF LIT_SPOPLIST.
+
+ CALL FUNCTION 'POPUP_TO_DECIDE_LIST'
+    EXPORTING
+      TITEL            = ' '
+      TEXTLINE1        = '确认要保存全部数据？？？'
+      TEXTLINE2        = ' '
+      MARK_MAX         = 1                           "最大选择数
+      MARK_FLAG        = 'X'      "选择框标志，如果是‘X’表示是checkbox，如果是空，表示是radio
+    IMPORTING
+      ANSWER           = ANTWORT
+    TABLES
+      T_SPOPLI         = LIT_SPOPLIST
+    EXCEPTIONS
+      TOO_MUCH_ANSWERS = 1
+      TOO_MUCH_MARKS   = 2.
+      
+      ------------------- 所有数据已保存成功 ----> yes  no   取消  http://www.baidusap.com/abap/function/3719
+      
+   TYPE-POOLS:ICON.
+    DATA:L_ANSWER TYPE C.
+
+ CALL FUNCTION 'POPUP_TO_CONFIRM'
+      EXPORTING
+*       TITLEBAR       = ' '
+*       DIAGNOSE_OBJECT             = ' '
+        TEXT_QUESTION  = '所有数据已保存成功！！！'
+        TEXT_BUTTON_1  = 'Yes'(002)   'Yes'(001) 请输入选择条件
+        ICON_BUTTON_1  = 'ICON_CHECKED'
+        TEXT_BUTTON_2  = 'No'(002)
+        ICON_BUTTON_2  = 'ICON_INCOMPLETE'
+*       DEFAULT_BUTTON = '1'
+*       DISPLAY_CANCEL_BUTTON       = 'X'
+*       USERDEFINED_F1_HELP         = ' '
+*       START_COLUMN   = 25
+*       START_ROW      = 6
+*       POPUP_TYPE     =
+*       IV_QUICKINFO_BUTTON_1       = ' '
+*       IV_QUICKINFO_BUTTON_2       = ' '
+      IMPORTING
+        ANSWER         = L_ANSWER
+* TABLES
+*       PARAMETER      =
+      EXCEPTIONS
+        TEXT_NOT_FOUND = 1
+        OTHERS         = 2.
+    WRITE:L_ANSWER.
+    
+ ---------------------POPUP_WITH_TABLE_DISPLAY_OK
+ 参数 50 20 10 5
+ 
