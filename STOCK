@@ -1,0 +1,796 @@
+*&---------------------------------------------------------------------*
+*& Report  ZGUPIAO
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+REPORT ZGUPIAO1.
+TYPE-POOLS: ABAP,SLIS.
+
+*INCLUDE zstock_json_util.
+
+DATA:F_PICTURE TYPE REF TO CL_GUI_PICTURE,
+     R_PICTURE TYPE REF TO CL_GUI_PICTURE,
+     Z_PICTURE TYPE REF TO CL_GUI_PICTURE,
+     Y_PICTURE TYPE REF TO CL_GUI_PICTURE.
+
+DATA: F_CONTAINER TYPE REF TO CL_GUI_CUSTOM_CONTAINER,
+      R_CONTAINER TYPE REF TO CL_GUI_CUSTOM_CONTAINER,
+      Y_CONTAINER TYPE REF TO CL_GUI_CUSTOM_CONTAINER,
+      Z_CONTAINER TYPE REF TO CL_GUI_CUSTOM_CONTAINER.
+DATA:F_URL TYPE CNDP_URL,
+     R_URL TYPE CNDP_URL,
+     Z_URL TYPE CNDP_URL,
+     Y_URL TYPE CNDP_URL.
+
+DATA:STOCK_URL(20) TYPE C.
+DATA:OK_CODE LIKE SY-UCOMM.
+
+DATA :
+  LS_LAYOUT     TYPE SLIS_LAYOUT_ALV,
+  LT_SORT       TYPE SLIS_T_SORTINFO_ALV,
+  LS_SORT       TYPE SLIS_SORTINFO_ALV,
+  LT_EVENT_EXIT TYPE SLIS_T_EVENT_EXIT,
+  LS_EVENT_EXIT TYPE SLIS_EVENT_EXIT.
+*-----------------------*
+* ALV SYSTEM VARIABLES *
+*-----------------------*
+DATA: FIELDTAB    TYPE SLIS_T_FIELDCAT_ALV,
+      WA_FIELDTAB TYPE LINE OF SLIS_T_FIELDCAT_ALV,
+      HEADING     TYPE SLIS_T_LISTHEADER,
+      LAYOUT      TYPE SLIS_LAYOUT_ALV,
+      EVENTS      TYPE SLIS_T_EVENT,
+      EXCLUDING   TYPE SLIS_T_EXTAB,
+      FILTER      TYPE SLIS_T_FILTER_ALV,
+      REPNAME     LIKE SY-REPID VALUE SY-REPID,
+      F2CODE      LIKE SY-UCOMM VALUE '&ETA',
+      G_SAVE      TYPE C,
+      G_EXIT      TYPE C,
+      G_VARIANT   LIKE DISVARIANT,
+      GX_VARIANT  LIKE DISVARIANT.
+
+FIELD-SYMBOLS: <DYN_TABLE> TYPE STANDARD TABLE,
+               <DYN_WA> ,
+               <DYN_FIELD>.
+DATA: DY_TABLE TYPE REF TO DATA,
+      DY_LINE  TYPE REF TO DATA,
+      XFC      TYPE LVC_S_FCAT,
+      IFC      TYPE LVC_T_FCAT.
+DATA: NUM(6) TYPE C.
+DATA: BEGIN OF WA_NUM,
+        NUM(6) TYPE C,
+      END OF WA_NUM.
+DATA: BEGIN OF WA_LIN,
+        STR TYPE STRING,
+      END OF WA_LIN.
+DATA: IT_NUM LIKE TABLE OF WA_NUM WITH HEADER LINE,
+      IT_RES LIKE TABLE OF WA_LIN WITH HEADER LINE.
+DATA: TMP_NUM(6) TYPE N,
+      IDX        TYPE I,
+      IDX_TMP    TYPE I.
+TYPES: BEGIN OF TY_LIST,
+         FL(30),
+       END OF TY_LIST.
+DATA: IT_LIST TYPE TABLE OF TY_LIST WITH HEADER LINE.
+
+
+TYPES: BEGIN OF TY_SINA_LIVE,
+         SNAME  TYPE CHAR20, "股票名字
+         TOPEN  TYPE CHAR20, "今日开盘价
+         YCLOSE TYPE CHAR20, "昨日收盘价；
+         CPRICE TYPE CHAR20, "当前价格;
+         THIGH  TYPE CHAR20, "当日最高价
+         TLOW   TYPE CHAR20, "今日最低价
+         BUY    TYPE CHAR20, "竞买价，即“买一”报价；
+         SALE   TYPE CHAR20, "竞卖价，即“卖一”报价；
+         NUMBER TYPE CHAR20, "成交的股票数
+         BUY11  TYPE CHAR20, "买一,数量
+         BUY12  TYPE CHAR20, "买一,报价
+         BUY21  TYPE CHAR20, "买二,数量
+         BUY22  TYPE CHAR20, "买二,报价
+         BUY31  TYPE CHAR20, "买三,数量
+         BUY32  TYPE CHAR20, "买三,报价
+         BUY41  TYPE CHAR20, "买四,数量
+         BUY42  TYPE CHAR20, "买四,报价
+         BUY51  TYPE CHAR20, "买五,数量
+         BUY52  TYPE CHAR20, "买五,报价
+         SALE11 TYPE CHAR20, "卖一,数量
+         SALE12 TYPE CHAR20, "卖一,报价
+         SALE21 TYPE CHAR20, "卖二,数量
+         SALE22 TYPE CHAR20, "卖二,报价
+         SALE31 TYPE CHAR20, "卖三,数量
+         SALE32 TYPE CHAR20, "卖三,报价
+         SALE41 TYPE CHAR20, "卖四,数量
+         SALE42 TYPE CHAR20, "卖四,报价
+         SALE51 TYPE CHAR20, "卖五,数量
+         SALE52 TYPE CHAR20, "卖五,报价
+         DATE   TYPE CHAR20, "日期
+         TIME   TYPE CHAR20, "时间
+       END OF TY_SINA_LIVE.
+
+*----------------------------------------------------------------------*
+* CLASS lcl_receiver DEFINITION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS LCL_RECEIVER DEFINITION.
+  PUBLIC SECTION.
+    METHODS:
+      HANDLE_FINISHED FOR EVENT FINISHED OF CL_GUI_TIMER.
+ENDCLASS. "lcl_receiver DEFINITION
+
+*----------------------------------------------------------------------*
+* CLASS lcl_receiver IMPLEMENTATION
+*----------------------------------------------------------------------*
+*
+*----------------------------------------------------------------------*
+CLASS LCL_RECEIVER IMPLEMENTATION.
+  METHOD HANDLE_FINISHED.
+    CALL METHOD CL_GUI_CFW=>SET_NEW_OK_CODE
+      EXPORTING
+        NEW_CODE = '&NTE'.
+  ENDMETHOD. "handle_finished
+ENDCLASS. "lcl_receiver IMPLEMENTATION
+
+DATA: RECEIVER TYPE REF TO LCL_RECEIVER,
+      TIMER    TYPE REF TO CL_GUI_TIMER.
+
+DEFINE INIT_FIELD.
+  clear &1.
+  &1-fieldname = &2.
+  &1-reptext_ddic = &3.
+  &1-hotspot = &4.
+  if &5 = 'X'.
+    &1-emphasize = 'X'.
+  endif.
+  append &1 to fieldtab.
+END-OF-DEFINITION.
+
+DEFINE INIT_IFC.
+  clear xfc.
+  xfc-fieldname = &1.
+  xfc-datatype = &2.
+  xfc-inttype = &3.
+  xfc-intlen = &4.
+  xfc-decimals = &5.
+  xfc-hotspot = &6.
+  append xfc to ifc.
+END-OF-DEFINITION.
+
+SELECT-OPTIONS:S_NUM FOR NUM.
+
+INITIALIZATION.
+*默认自己设的变式U+登录用户名
+  PERFORM INIT_VARIANT.
+
+START-OF-SELECTION .
+  CREATE OBJECT TIMER.
+  CREATE OBJECT RECEIVER.
+  SET HANDLER RECEIVER->HANDLE_FINISHED FOR TIMER.
+  TIMER->INTERVAL = 5.
+  PERFORM SET_NUMBER.
+  PERFORM READ_DATA.
+  PERFORM WRITE_GRID_OUTPUT.
+
+*&---------------------------------------------------------------------*
+*& Form READ_DATA
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+FORM READ_DATA.
+  PERFORM SEND_HTTP TABLES IT_NUM IT_RES.
+  PERFORM BUILD_FILEDCAT1.
+  PERFORM PROCESS_DATA.
+  CALL METHOD TIMER->RUN.
+ENDFORM. "READ_DATA
+*&---------------------------------------------------------------------*
+*& Form send_http
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+* -->PT_NUM text
+* -->RT_TAB text
+*----------------------------------------------------------------------*
+FORM SEND_HTTP TABLES PT_NUM STRUCTURE WA_NUM RT_TAB STRUCTURE WA_LIN.
+  DATA: LOC_CONV      TYPE REF TO CL_ABAP_CONV_IN_CE,
+        HTTP_CLIENT   TYPE REF TO IF_HTTP_CLIENT,
+        ABAP_ENCODING TYPE ABAP_ENCODING,
+        L_STR         TYPE STRING,
+        L_XSTR        TYPE XSTRING,
+        L_TMP         TYPE STRING,
+        L_URL         TYPE STRING,
+        L_RESULT      TYPE STRING,
+        R_STR         TYPE STRING.
+  DATA: RESULT_TAB TYPE TABLE OF STRING WITH HEADER LINE.
+  IF PT_NUM[] IS INITIAL.
+    RETURN.
+  ENDIF.
+  CLEAR:IT_RES.
+  REFRESH:IT_RES.
+  LOOP AT PT_NUM.
+    CLEAR L_TMP.
+    IF PT_NUM-NUM(1) < 6.
+      CONCATENATE 'sz' PT_NUM-NUM INTO L_TMP.
+    ENDIF.
+    IF PT_NUM-NUM(1) = '6'.
+      CONCATENATE 'sh' PT_NUM-NUM INTO L_TMP.
+    ENDIF.
+    CONCATENATE L_STR L_TMP INTO L_STR SEPARATED BY ','.
+  ENDLOOP.
+  IF L_STR(1) = ','.
+    SHIFT L_STR LEFT DELETING LEADING ','.
+  ENDIF.
+  CONCATENATE 'http://58.63.237.216/list=' L_STR INTO L_URL .
+  CALL METHOD CL_HTTP_CLIENT=>CREATE_BY_URL
+    EXPORTING
+      URL                = L_URL
+    IMPORTING
+      CLIENT             = HTTP_CLIENT
+    EXCEPTIONS
+      ARGUMENT_NOT_FOUND = 1
+      PLUGIN_NOT_ACTIVE  = 2
+      INTERNAL_ERROR     = 3
+      OTHERS             = 4.
+
+  CALL METHOD HTTP_CLIENT->REQUEST->SET_HEADER_FIELD
+    EXPORTING
+      NAME  = 'Content-Type'
+      VALUE = 'text/html;charset=utf-8'. "发送字符串时只能用utf-8编码
+
+  CALL METHOD HTTP_CLIENT->SEND
+    EXCEPTIONS
+      HTTP_COMMUNICATION_FAILURE = 1
+      HTTP_INVALID_STATE         = 2.
+  CALL METHOD HTTP_CLIENT->RECEIVE
+    EXCEPTIONS
+      HTTP_COMMUNICATION_FAILURE = 1
+      HTTP_INVALID_STATE         = 2
+      HTTP_PROCESSING_FAILED     = 3.
+  CLEAR L_RESULT .
+
+  L_XSTR = HTTP_CLIENT->RESPONSE->GET_DATA( ).
+*  l_str = http_client->response->get_data( ).
+  IF SY-SUBRC = 0 .
+    HTTP_CLIENT->CLOSE( ).
+  ENDIF.
+
+  CALL METHOD CL_ABAP_CONV_IN_CE=>CREATE
+    EXPORTING
+      INPUT       = L_XSTR
+      ENCODING    = '8400'
+      REPLACEMENT = '?'
+      IGNORE_CERR = ABAP_TRUE
+    RECEIVING
+      CONV        = LOC_CONV.
+
+  TRY.
+      CALL METHOD LOC_CONV->READ
+        IMPORTING
+          DATA = L_STR.
+    CATCH CX_SY_CONVERSION_CODEPAGE.
+    CATCH CX_SY_CODEPAGE_CONVERTER_INIT.
+    CATCH CX_PARAMETER_INVALID_TYPE.
+    CATCH CX_PARAMETER_INVALID_RANGE.
+  ENDTRY.
+*  SPLIT l_str AT 'var' INTO TABLE rt_tab .
+
+*  write w_result.  "这样会输出乱码
+  REFRESH RESULT_TAB .
+*  SPLIT l_str AT cl_abap_char_utilities=>cr_lf INTO TABLE result_tab .
+  SPLIT L_STR AT CL_ABAP_CHAR_UTILITIES=>NEWLINE INTO TABLE RESULT_TAB .
+*  SPLIT l_str AT '#' INTO TABLE result_tab .
+*  READ TABLE result_tab INTO r_str INDEX 1.
+  DATA: LINE LIKE LINE OF RT_TAB.
+  DATA: LV_LEN TYPE INT4.
+
+  LOOP AT RESULT_TAB.
+    LINE-STR = RESULT_TAB.
+*    lv_len = strlen( line-str ).
+*    lv_len = lv_len - 11.
+*    line-str = line-str+11(lv_len).
+*    shift line-str LEFT DELETING LEADING ''
+    APPEND LINE TO RT_TAB.
+*    APPEND result_tab to rt_tab.
+*    append r_str to rt_tab.
+*    APPEND rt_tab.
+  ENDLOOP.
+*  rt_tab[] = result_tab[].
+
+
+ENDFORM. "send_http
+
+FORM BUILD_FILEDCAT1.
+
+
+  IF IFC IS INITIAL.
+    INIT_IFC 'SCODE' 'CHAR' 'C' 6 0 'X'.
+    INIT_IFC 'SNAME' 'CHAR' 'C' 20 0 'X'.
+    INIT_IFC 'TOPEN' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'YCLOSE' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'CPRICE' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'THIGH' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'TLOW' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'NUMBER' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'AMOUNT' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY11' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY12' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY21' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY22' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY31' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY32' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY41' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY42' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY51' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'BUY52' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE11' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE12' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE21' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE22' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE31' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE32' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE41' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE42' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE51' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'SALE52' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'DATE' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'TIME' 'CHAR' 'C' 20 0 ' '.
+*颜色控制
+    CLEAR XFC.
+    XFC-FIELDNAME = 'T_CELLCOLORS'.
+    XFC-REF_FIELD = 'COLTAB'.
+    XFC-REF_TABLE = 'CALENDAR_TYPE'.
+    APPEND XFC TO IFC.
+*
+***ALV field category
+    INIT_FIELD WA_FIELDTAB 'SCODE'  '代码' 'X' '' .
+    INIT_FIELD WA_FIELDTAB 'SNAME'  '名称' 'X' '' .
+    INIT_FIELD WA_FIELDTAB 'TOPEN'  '开盘价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'YCLOSE' '昨收价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'CPRICE' '现价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'THIGH'  '最高价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'TLOW'   '最低价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY'    '买一价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE'   '卖一价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'NUMBER' '成交数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'AMOUNT' '成交金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY11'  '买一数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY12'  '买一金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY21'  '买二数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY22'  '买二金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY31'  '买三数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY32'  '买三金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY41'  '买四数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY42'  '买四金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY51'  '买五数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BUY52'  '买五金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE11' '卖一数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE12' '卖一金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE21' '卖二数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE22' '卖二金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE31' '卖三数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE32' '卖三金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE41' '卖四数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE42' '卖四金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE51' '卖五数量' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SALE52' '卖五金额' '' '' .
+    INIT_FIELD WA_FIELDTAB 'DATE'   '日期' '' '' .
+    INIT_FIELD WA_FIELDTAB 'TIME'   '时间' '' '' .
+
+* Create dynamic internal table and assign to FS
+
+    CALL METHOD CL_ALV_TABLE_CREATE=>CREATE_DYNAMIC_TABLE
+      EXPORTING
+        IT_FIELDCATALOG = IFC
+      IMPORTING
+        EP_TABLE        = DY_TABLE.
+    ASSIGN DY_TABLE->* TO <DYN_TABLE>.
+* Create dynamic work area and assign to FS
+    CREATE DATA DY_LINE LIKE LINE OF <DYN_TABLE>.
+    ASSIGN DY_LINE->* TO <DYN_WA>.
+  ELSE.
+    CLEAR <DYN_TABLE>.
+    REFRESH: <DYN_TABLE>.
+  ENDIF.
+
+ENDFORM .
+
+
+*&---------------------------------------------------------------------*
+*& Form build_fieldcat
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+FORM BUILD_FIELDCAT.
+
+  IF IFC IS INITIAL.
+    INIT_IFC 'STNUM' 'CHAR' 'C' 6 0 'X'.
+    INIT_IFC 'STNAM' 'CHAR' 'C' 20 0 ' '.
+    INIT_IFC 'OPPRI' 'CHAR' 'C' 20 0 ' '. " openning price
+    INIT_IFC 'CLPRI' 'CHAR' 'C' 20 0 ' '. " closing price of last day
+    INIT_IFC 'CRPRI' 'CHAR' 'C' 20 0 ' '. " current price
+    INIT_IFC 'HIPRI' 'CHAR' 'C' 20 0 ' '. " high price
+    INIT_IFC 'LOPRI' 'CHAR' 'C' 20 0 ' '. " low price
+    INIT_IFC 'BYPRI' 'CHAR' 'C' 20 0 ' '. " buying price 1
+    INIT_IFC 'SLPRI' 'CHAR' 'C' 20 0 ' '. " selling price 1
+    INIT_IFC 'DUQTY' 'CHAR' 'C' 30 0 ' '. " due quantity
+    INIT_IFC 'DUAMT' 'CHAR' 'C' 30 0 ' '. " due amount
+*颜色控制
+    CLEAR XFC.
+    XFC-FIELDNAME = 'T_CELLCOLORS'.
+    XFC-REF_FIELD = 'COLTAB'.
+    XFC-REF_TABLE = 'CALENDAR_TYPE'.
+    APPEND XFC TO IFC.
+*
+***ALV field category
+    INIT_FIELD WA_FIELDTAB 'STNUM' '代码' 'X' '' .
+    INIT_FIELD WA_FIELDTAB 'STNAM' '名称' '' '' .
+    INIT_FIELD WA_FIELDTAB 'OPPRI' '开盘价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'CLPRI' '昨日收盘价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'CRPRI' '现价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'HIPRI' '最高价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'LOPRI' '最低价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'BYPRI' '买一价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'SLPRI' '卖一价' '' '' .
+    INIT_FIELD WA_FIELDTAB 'DUQTY' '成交数' '' '' .
+    INIT_FIELD WA_FIELDTAB 'DUAMT' '成交金额' '' '' .
+
+* Create dynamic internal table and assign to FS
+
+    CALL METHOD CL_ALV_TABLE_CREATE=>CREATE_DYNAMIC_TABLE
+      EXPORTING
+        IT_FIELDCATALOG = IFC
+      IMPORTING
+        EP_TABLE        = DY_TABLE.
+    ASSIGN DY_TABLE->* TO <DYN_TABLE>.
+* Create dynamic work area and assign to FS
+    CREATE DATA DY_LINE LIKE LINE OF <DYN_TABLE>.
+    ASSIGN DY_LINE->* TO <DYN_WA>.
+  ELSE.
+    CLEAR <DYN_TABLE>.
+    REFRESH: <DYN_TABLE>.
+  ENDIF.
+
+ENDFORM. " BUILD_FIELDCAT
+
+
+*&---------------------------------------------------------------------*
+*& Form write_grid_output
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+FORM WRITE_GRID_OUTPUT.
+  DEFINE M_SORT.
+    add 1 to ls_sort-spos.
+    ls_sort-fieldname = &1.
+    append ls_sort to lt_sort.
+  END-OF-DEFINITION.
+
+  DEFINE M_EVENT_EXIT.
+    clear ls_event_exit.
+    ls_event_exit-ucomm = &1.
+    ls_event_exit-after = 'X'.
+    append ls_event_exit to lt_event_exit.
+  END-OF-DEFINITION.
+
+  M_EVENT_EXIT '&NTE'. " Refresh
+  LS_LAYOUT-ZEBRA = 'X'.
+  LS_LAYOUT-COLWIDTH_OPTIMIZE = 'X'.
+
+  M_SORT 'SCODE'.
+  G_SAVE = 'A'.
+  LS_LAYOUT-COLTAB_FIELDNAME = 'T_CELLCOLORS'.
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      I_CALLBACK_PROGRAM      = SY-CPROG
+      I_CALLBACK_USER_COMMAND = 'USER_COMMAND'
+      IS_LAYOUT               = LS_LAYOUT
+      IT_FIELDCAT             = FIELDTAB
+      I_DEFAULT               = 'A'
+      I_SAVE                  = G_SAVE
+      IT_SORT                 = LT_SORT
+      IT_EVENT_EXIT           = LT_EVENT_EXIT
+    TABLES
+      T_OUTTAB                = <DYN_TABLE>.
+  IF SY-SUBRC <> 0.
+    WRITE: 'SY-SUBRC: ', SY-SUBRC, 'REUSE_ALV_GRID_DISPLAY'.
+  ENDIF.
+ENDFORM. " WRITE_GRID_OUTPUT
+
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+FORM PROCESS_DATA .
+  FIELD-SYMBOLS:<T_CELLCOLORS> TYPE LVC_T_SCOL.
+  DATA:WA_CELLCOLORS TYPE LINE OF LVC_T_SCOL.
+  DATA:XJ TYPE P DECIMALS 2,
+       ZJ TYPE P DECIMALS 2.
+
+  LOOP AT IT_RES.
+    CLEAR IT_LIST[].
+    IF STRLEN( IT_RES-STR ) < 30.
+      CONTINUE.
+    ENDIF.
+
+    CLEAR:XJ,ZJ.
+    SPLIT IT_RES-STR AT ',' INTO TABLE IT_LIST .
+
+    "代码
+    READ TABLE IT_LIST INDEX 1.
+    IDX = 1.
+    ASSIGN COMPONENT IDX
+    OF STRUCTURE <DYN_WA> TO <DYN_FIELD>.
+    <DYN_FIELD> = IT_LIST-FL+13(6).
+
+    "名称
+    IDX = 2.
+    ASSIGN COMPONENT IDX
+    OF STRUCTURE <DYN_WA> TO <DYN_FIELD>.
+    <DYN_FIELD> = IT_LIST-FL+21.
+
+    IDX = 2.
+    WHILE IDX < 33.
+      READ TABLE IT_LIST INDEX IDX.
+      IDX = IDX + 1.
+      ASSIGN COMPONENT IDX
+      OF STRUCTURE <DYN_WA> TO <DYN_FIELD>.
+      <DYN_FIELD> = IT_LIST-FL.
+
+      IF IDX = 4.
+        ZJ = <DYN_FIELD>.
+      ENDIF.
+
+
+      IF IDX = 5.
+        XJ = <DYN_FIELD>.
+      ENDIF.
+    ENDWHILE.
+
+    ASSIGN COMPONENT 'T_CELLCOLORS'
+    OF STRUCTURE <DYN_WA> TO <T_CELLCOLORS>.
+
+    CLEAR:WA_CELLCOLORS.
+    IF ZJ >= XJ.
+      WA_CELLCOLORS-COLOR-COL = '5'. "跌
+    ELSE.
+      WA_CELLCOLORS-COLOR-COL = '6'. "涨
+    ENDIF.
+
+    APPEND WA_CELLCOLORS TO <T_CELLCOLORS>.
+
+    APPEND <DYN_WA> TO <DYN_TABLE>.
+    CLEAR <DYN_WA>.
+  ENDLOOP.
+ENDFORM. " process_data
+
+*&---------------------------------------------------------------------*
+*& Form set_number
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+FORM SET_NUMBER .
+  LOOP AT S_NUM.
+    CLEAR IT_NUM.
+    IF S_NUM-OPTION = 'EQ' .
+      IF S_NUM-LOW <> '' .
+        IT_NUM-NUM = S_NUM-LOW.
+        APPEND IT_NUM.
+      ENDIF.
+      IF S_NUM-HIGH <> '' .
+        IT_NUM-NUM = S_NUM-HIGH.
+        APPEND IT_NUM.
+      ENDIF.
+    ENDIF.
+    IF S_NUM-OPTION = 'BT'.
+      TMP_NUM = S_NUM-LOW.
+      WHILE TMP_NUM <= S_NUM-HIGH.
+        CLEAR IT_NUM.
+        IT_NUM-NUM = TMP_NUM.
+        APPEND IT_NUM.
+        TMP_NUM = TMP_NUM + 1.
+      ENDWHILE.
+    ENDIF.
+  ENDLOOP.
+ENDFORM. " set_number
+*&---------------------------------------------------------------------*
+*& Module STATUS_0100 OUTPUT
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+MODULE STATUS_0100 OUTPUT.
+  SET PF-STATUS 'STATUS'.
+*分时图
+  IF F_PICTURE IS INITIAL.
+    CREATE OBJECT F_CONTAINER
+      EXPORTING
+        CONTAINER_NAME = 'F_CONTROL'.
+
+    CREATE OBJECT F_PICTURE
+      EXPORTING
+        PARENT = F_CONTAINER.
+
+    CALL METHOD F_PICTURE->SET_3D_BORDER
+      EXPORTING
+        BORDER = 1.
+
+    CALL METHOD F_PICTURE->LOAD_PICTURE_FROM_URL_ASYNC
+      EXPORTING
+        URL = F_URL.
+  ELSE.
+    CALL METHOD F_PICTURE->LOAD_PICTURE_FROM_URL_ASYNC
+      EXPORTING
+        URL = F_URL.
+  ENDIF.
+*日K线图
+  IF R_PICTURE IS INITIAL.
+    CREATE OBJECT R_CONTAINER
+      EXPORTING
+        CONTAINER_NAME = 'R_CONTROL'.
+
+    CREATE OBJECT R_PICTURE
+      EXPORTING
+        PARENT = R_CONTAINER.
+
+    CALL METHOD R_PICTURE->SET_3D_BORDER
+      EXPORTING
+        BORDER = 1.
+
+    CALL METHOD R_PICTURE->LOAD_PICTURE_FROM_URL_ASYNC
+      EXPORTING
+        URL = R_URL.
+  ELSE.
+    CALL METHOD R_PICTURE->LOAD_PICTURE_FROM_URL_ASYNC
+      EXPORTING
+        URL = R_URL.
+  ENDIF.
+
+*周K线图
+  IF Z_PICTURE IS INITIAL.
+    CREATE OBJECT Z_CONTAINER
+      EXPORTING
+        CONTAINER_NAME = 'Z_CONTROL'.
+
+    CREATE OBJECT Z_PICTURE
+      EXPORTING
+        PARENT = Z_CONTAINER.
+
+    CALL METHOD Z_PICTURE->SET_3D_BORDER
+      EXPORTING
+        BORDER = 1.
+
+    CALL METHOD Z_PICTURE->LOAD_PICTURE_FROM_URL_ASYNC
+      EXPORTING
+        URL = Z_URL.
+  ELSE.
+    CALL METHOD Z_PICTURE->LOAD_PICTURE_FROM_URL_ASYNC
+      EXPORTING
+        URL = Z_URL.
+  ENDIF.
+
+*月K线图
+  IF Y_PICTURE IS INITIAL.
+    CREATE OBJECT Y_CONTAINER
+      EXPORTING
+        CONTAINER_NAME = 'Y_CONTROL'.
+
+    CREATE OBJECT Y_PICTURE
+      EXPORTING
+        PARENT = Y_CONTAINER.
+
+    CALL METHOD Y_PICTURE->SET_3D_BORDER
+      EXPORTING
+        BORDER = 1.
+
+    CALL METHOD Y_PICTURE->LOAD_PICTURE_FROM_URL_ASYNC
+      EXPORTING
+        URL = Y_URL.
+  ELSE.
+    CALL METHOD Y_PICTURE->LOAD_PICTURE_FROM_URL_ASYNC
+      EXPORTING
+        URL = Y_URL.
+  ENDIF.
+ENDMODULE. " STATUS_0100 OUTPUT
+
+*&---------------------------------------------------------------------*
+*& Form F_USER_COMMAND
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+* -->R_UCOMM text
+* -->RS_SELFIELD text
+*----------------------------------------------------------------------*
+FORM USER_COMMAND USING R_UCOMM LIKE SY-UCOMM
+                     RS_SELFIELD TYPE SLIS_SELFIELD.
+
+  CASE R_UCOMM.
+    WHEN '&IC1'.
+      CLEAR: F_URL,Z_URL,R_URL,Y_URL.
+      F_URL = 'http://image.sinajs.cn/newchart/min/n/'.
+      Z_URL = 'http://image.sinajs.cn/newchart/weekly/n/'.
+      R_URL = 'http://image.sinajs.cn/newchart/daily/n/'.
+      Y_URL = 'http://image.sinajs.cn/newchart/monthly/n/'.
+
+      CHECK RS_SELFIELD-FIELDNAME CS 'SCODE'.
+      IF RS_SELFIELD-VALUE+0(1) = 0.
+        CONCATENATE 'sz' RS_SELFIELD-VALUE '.gif' INTO STOCK_URL.
+      ELSE.
+        CONCATENATE 'sh' RS_SELFIELD-VALUE '.gif' INTO STOCK_URL.
+      ENDIF.
+
+      CHECK STOCK_URL IS NOT INITIAL.
+      CONCATENATE F_URL STOCK_URL INTO F_URL.
+      CONCATENATE Z_URL STOCK_URL INTO Z_URL.
+      CONCATENATE Y_URL STOCK_URL INTO Y_URL.
+      CONCATENATE R_URL STOCK_URL INTO R_URL.
+      CALL SCREEN 0100.
+    WHEN '&NTE'.
+      PERFORM READ_DATA.
+      RS_SELFIELD-REFRESH = 'X'.
+      CALL METHOD TIMER->RUN.
+  ENDCASE.
+
+ENDFORM. "F_USER_COMMAND
+*&---------------------------------------------------------------------*
+*& Module USER_COMMAND_EXIT INPUT
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+MODULE USER_COMMAND_EXIT INPUT.
+  CASE OK_CODE.
+    WHEN 'EXIT' OR 'BACK' OR 'CANC'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE. " USER_COMMAND_EXIT INPUT
+*&---------------------------------------------------------------------*
+*& Module USER_COMMAND_0100 INPUT
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+MODULE USER_COMMAND_0100 INPUT.
+  OK_CODE = SY-UCOMM. CLEAR SY-UCOMM.
+  CASE OK_CODE.
+
+    WHEN 'EXIT' OR 'BACK' OR 'CANC'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE. " USER_COMMAND_0100 INPUT
+*&---------------------------------------------------------------------*
+*& Form INIT_VARIANT
+*&---------------------------------------------------------------------*
+* text
+*----------------------------------------------------------------------*
+* --> p1 text
+* <-- p2 text
+*----------------------------------------------------------------------*
+FORM INIT_VARIANT .
+  DATA: H_VARIANT LIKE RSVAR-VARIANT.
+  DATA: H_SUBRC LIKE SY-SUBRC.
+  CLEAR: H_VARIANT,H_SUBRC .
+
+  CHECK SY-TCODE <> 'SE38' AND SY-TCODE <> 'SA38' .
+  H_VARIANT = 'U_'.
+  WRITE SY-UNAME TO H_VARIANT+2.
+
+  CALL FUNCTION 'RS_VARIANT_EXISTS'
+    EXPORTING
+      REPORT  = SY-REPID
+      VARIANT = H_VARIANT
+    IMPORTING
+      R_C     = H_SUBRC.
+
+  IF H_SUBRC = 0.
+* g_feldlist-g_var_flag = 'X'.
+    CALL FUNCTION 'RS_SUPPORT_SELECTIONS'
+      EXPORTING
+        REPORT               = SY-REPID
+        VARIANT              = H_VARIANT
+      EXCEPTIONS
+        VARIANT_NOT_EXISTENT = 01
+        VARIANT_OBSOLETE     = 02.
+  ENDIF.
+
+ENDFORM. " INI T_VARIANT
